@@ -1,0 +1,243 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgres"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id            String   @db.VarChar(36) @id @default(uuid())
+  nome          String   @db.VarChar(60)
+  email         String   @db.VarChar(40) @unique
+  senha         String   @db.VarChar(60)   // senha deve ser varchar(60)
+  telefone      String   @db.VarChar(15)
+  latitude      Decimal? @db.Decimal(10, 7)
+  longitude     Decimal? @db.Decimal(10, 7)
+  configuracoes Json?
+  resetToken    String?  @db.VarChar(100)
+  resetTokenExpires DateTime?
+  createdAt     DateTime @default(now())
+  publicacoes   Publicacao[]
+  avistamentos  Avistamento[]
+  eventos       Evento[]
+  socialAccounts SocialAccount[]
+  notificacoes  Notificacao[]
+  inscricoesPush InscricaoPush[]
+  denuncias     Denuncia[]
+  @@map("usuarios")
+}
+
+model SocialAccount {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  provider   String   @db.VarChar(20)
+  providerId String   @db.VarChar(128)
+  email      String?  @db.VarChar(100)
+  accessToken String? 
+  refreshToken String?
+  createdAt  DateTime @default(now())
+  userId     String   @db.VarChar(36)
+  usuario    Usuario  @relation(fields: [userId], references: [id])
+
+  @@unique([provider, providerId])
+  @@map("social_accounts")
+}
+
+model Publicacao {
+  id                Int           @id @default(autoincrement())
+  tipo              TiposPet      @default(PERDIDO)
+  status            StatusPet     @default(ATIVO)
+  titulo            String        @db.VarChar(100)
+  descricao         String
+  fotos_urls        String[]
+  latitude          Decimal       @db.Decimal(10, 7)
+  longitude         Decimal       @db.Decimal(10, 7)
+  endereco_texto    String        @db.VarChar(100)
+  bairro            String?       @db.VarChar(60)
+  cidade            String?       @db.VarChar(60)
+  especie           Especies 
+  raca              String?       @db.VarChar(40)
+  porte             Portes?   
+  cor               String?       @db.VarChar(20)
+  sexo              Sexos?    
+  idade             Int?          @db.SmallInt
+  unidadeIdade      UnidadeTempo? @default(ANOS)
+  nome_pet          String?       @db.VarChar(40)
+  telefone_contato  String?       @db.VarChar(15)
+  recompensa        Decimal?      @db.Decimal(10, 2)
+  data_evento       DateTime?     // Data que o pet se perdeu/foi encontrado
+  data_publicacao   DateTime      @default(now())
+  motivo_encerramento String?     @db.VarChar(255) // Motivo do encerramento da publicação
+  usuario           Usuario       @relation(fields: [usuarioId], references: [id])
+  usuarioId         String        @db.VarChar(36)
+  avistamentos      Avistamento[]
+  denuncias         Denuncia[]
+  @@map("publicacoes")
+}
+
+model Evento {
+  id                Int           @id @default(autoincrement())
+  titulo            String        @db.VarChar(100)
+  descricao         String
+  fotos_urls        String[]
+  latitude          Decimal       @db.Decimal(10, 7)
+  longitude         Decimal       @db.Decimal(10, 7)
+  endereco_texto    String        @db.VarChar(100)
+  data_hora_inicio  DateTime
+  data_hora_fim     DateTime?
+  status            StatusEvento  @default(AGENDADO)
+  capacidade_max    Int?          @db.SmallInt
+  vagas_ocupadas    Int           @default(0) @db.SmallInt
+  data_criacao      DateTime      @default(now())
+  usuario           Usuario       @relation(fields: [usuarioId], references: [id])
+  usuarioId         String        @db.VarChar(36)
+  @@map("eventos")
+}
+
+model Avistamento {
+  id               Int         @id @default(autoincrement())
+  observacoes      String?
+  fotos_urls       String[]
+  latitude         Decimal     @db.Decimal(10, 7)
+  longitude        Decimal     @db.Decimal(10, 7)
+  endereco_texto   String      @db.VarChar(100)
+  data_avistamento DateTime    @default(now())
+  publicacao       Publicacao  @relation(fields: [publicacaoId], references: [id])
+  publicacaoId     Int
+  usuario          Usuario     @relation(fields: [usuarioId], references: [id])
+  usuarioId        String      @db.VarChar(36)
+  data_criacao     DateTime    @default(now())
+  @@map("avistamentos")
+}
+
+model Denuncia {
+  id           Int        @id @default(autoincrement())
+  publicacaoId Int
+  publicacao   Publicacao @relation(fields: [publicacaoId], references: [id])
+  usuarioId    String?    @db.VarChar(36) // Opcional, se permitir anônimo
+  usuario      Usuario?   @relation(fields: [usuarioId], references: [id])
+  motivo       String     @db.VarChar(50)
+  descricao    String?    @db.Text
+  status       StatusDenuncia @default(PENDENTE)
+  data_criacao DateTime   @default(now())
+
+  @@map("denuncias")
+}
+
+enum TiposPet {
+  PERDIDO
+  ENCONTRADO
+  ADOCAO
+  RESGATE
+}
+
+enum StatusPet {
+  ATIVO
+  RESOLVIDO
+  PENDENTE
+  EM_ANDAMENTO
+  EM_ANALISE
+  RESGATADO
+}
+
+enum StatusEvento {
+  AGENDADO
+  EM_ANDAMENTO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum Especies {
+  CACHORRO
+  GATO
+  OUTRO
+}
+
+enum Sexos {
+  MACHO
+  FEMEA
+  INDEFINIDO
+}
+
+enum UnidadeTempo {
+  ANOS
+  MESES
+}
+
+enum Portes {
+  PEQUENO
+  MEDIO
+  GRANDE
+}
+
+enum StatusDenuncia {
+  PENDENTE
+  EM_ANALISE
+  ACEITA
+  REJEITADA
+}
+
+model Notificacao {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  usuarioId  String   @db.VarChar(36)
+  usuario    Usuario  @relation(fields: [usuarioId], references: [id])
+  titulo     String   @db.VarChar(150)
+  corpo      String?
+  dados      Json?
+  lida       Boolean  @default(false)
+  canal      String   @db.VarChar(20)
+  prioridade Int?     @default(0)
+  criadaEm   DateTime @default(now())
+  enviadaEm  DateTime?
+  entregue   Boolean  @default(false)
+
+  @@map("notificacoes")
+}
+
+model InscricaoPush {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  usuarioId  String?  @db.VarChar(36)
+  usuario    Usuario? @relation(fields: [usuarioId], references: [id])
+  endpoint   String   @db.Text @unique
+  keys       Json
+  criadaEm   DateTime @default(now())
+
+  @@map("inscricoes_push")
+}
+
+
+
+// model Publicacao {
+//   id                Int         @id @default(autoincrement())
+//   tipo              Tipos       @default(PERDIDO)
+//   status            Status      @default(ATIVO)
+//   titulo            String      @db.VarChar(100)
+//   descricao         String
+//   fotos_urls        String[]
+//   latitude          Decimal     @db.Decimal(10, 7)
+//   longitude         Decimal     @db.Decimal(10, 7)
+//   endereco_texto    String      @db.VarChar(100)
+//   especie           Especies? 
+//   raca              String?     @db.VarChar(40)
+//   porte             Portes?   
+//   cor               String?     @db.VarChar(20)
+//   sexo              Sexos?    
+//   idade             Int?        @db.SmallInt
+//   nome_pet          String?     @db.VarChar(40)
+//   data_evento       DateTime?
+//   data_hora_inicio  DateTime?
+//   data_hora_fim     DateTime?    
+//   data_publicacao   DateTime    @default(now())
+//   usuario           Usuario     @relation(fields: [usuarioId], references: [id])
+//   usuarioId         String      @db.VarChar(36)
+//   avistamentos      Avistamento[]
+//   @@map("publicacoes")
+// }
