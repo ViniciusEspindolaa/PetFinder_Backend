@@ -9,12 +9,31 @@ if (!process.env.DATABASE_URL) {
 
 const connectionString = process.env.DATABASE_URL
 
-const pool = new Pool({ 
-  connectionString,
-  // pg options
-  ssl: { rejectUnauthorized: false } // Permissive SSL for Neon/Cloud
-})
+// Global variable to hold the Prisma instance in development
+// to prevent exhausting database connections during hot reloads
+const globalForPrisma = global as unknown as { prisma: PrismaClient }
 
-const adapter = new PrismaPg(pool)
+export const prisma = globalForPrisma.prisma || createPrismaClient()
 
-export const prisma = new PrismaClient({ adapter })
+function createPrismaClient() {
+  try {
+    const pool = new Pool({ 
+      connectionString,
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+      max: process.env.NODE_ENV === 'production' ? 1 : 10 // Limit connections in serverless
+    })
+    
+    const adapter = new PrismaPg(pool)
+    
+    return new PrismaClient({ 
+      adapter,
+      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    })
+  } catch (error) {
+    console.error('Failed to initialize Prisma Client:', error)
+    // Fallback to standard client if adapter fails (though less ideal for serverless)
+    return new PrismaClient()
+  }
+}
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
