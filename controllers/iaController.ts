@@ -1,8 +1,20 @@
 import { Request, Response } from 'express';
 import vision from '@google-cloud/vision';
 
-// Cria um cliente do Google Vision (ele lê automaticamente a chave do arquivo apontado na variável GOOGLE_APPLICATION_CREDENTIALS do .env)
-const client = new vision.ImageAnnotatorClient();
+// Configuração do Google Vision para Suportar Vercel (Serverless) ou Local
+let clientOptions: any = {};
+
+if (process.env.GOOGLE_CREDENTIALS_JSON) {
+  try {
+    // Na Vercel, vamos ler as credenciais diretamente do texto JSON
+    clientOptions.credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+  } catch (error) {
+    console.error('Erro ao fazer parse do GOOGLE_CREDENTIALS_JSON:', error);
+  }
+}
+
+// Cria um cliente do Google Vision (Se não tiver `credentials`, ele cai pro fallback automático de ler o arquivo apontado em GOOGLE_APPLICATION_CREDENTIALS do .env)
+const client = new vision.ImageAnnotatorClient(clientOptions);
 
 export const analyzePetImage = async (req: Request, res: Response) => {
   try {
@@ -13,7 +25,7 @@ export const analyzePetImage = async (req: Request, res: Response) => {
     // 1. Envia o buffer da imagem para o Google Cloud Vision
     console.log('Enviando imagem para análise no Google Cloud Vision...');
     const [result] = await client.annotateImage({
-      image: { content: req.file.buffer },
+      image: { content: new Uint8Array(req.file.buffer) },
       features: [{ type: 'LABEL_DETECTION' }, { type: 'WEB_DETECTION' }]
     });
 
