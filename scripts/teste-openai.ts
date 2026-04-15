@@ -7,7 +7,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 async function main() {
   try {
     console.log("Testando chave do Gemini...");
-    const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+    const model = genAI.getGenerativeModel({ model: 'models/gemini-embedding-001' });
     const result = await model.embedContent('teste');
     
     console.log("Sucesso! Vetor gerado de tamanho:", result.embedding.values.length);

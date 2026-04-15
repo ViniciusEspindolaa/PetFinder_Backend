@@ -83,7 +83,7 @@ model Publicacao {
     avistamentos      Avistamento[]
     denuncias         Denuncia[]
 
-    vetorBusca        Unsupported("vector(768)")? @map("vetor_busca")
+    vetorBusca        Unsupported("vector(3072)")? @map("vetor_busca")
 
     @@map("publicacoes")
   }model Evento {

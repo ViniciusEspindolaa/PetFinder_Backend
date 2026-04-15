@@ -6,7 +6,7 @@ export const gerarVetorBusca = async (texto: string): Promise<number[] | null> =
   if (!texto) return null;
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+    const model = genAI.getGenerativeModel({ model: 'models/gemini-embedding-001' });
     const result = await model.embedContent(texto);
     
     return result.embedding.values;
