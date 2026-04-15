@@ -4,6 +4,7 @@ import { z } from 'zod'
 import nodemailer from "nodemailer"
 import { uploadPetPhotos, handleUploadError, extractFileInfo } from "../middleware/upload"
 import { getEmailTemplate } from "../utils/emailTemplate"
+import { gerarVetorBusca } from "../services/openai"
 
 const router = Router()
 
@@ -100,6 +101,83 @@ function validarPublicacao(dados: any) {
 }
 
 // Rota POST corrigida
+
+// Rota para forçar os vetores antigos (Tirar de produção posteriormente ou usar middleware)
+router.get("/gerar-vetores-antigos", async (req, res) => {
+  try {
+    const publicacoes = await prisma.publicacao.findMany({ select: { id: true, tipo: true, titulo: true, descricao: true, especie: true, raca: true, cor: true, endereco_texto: true } });
+    const processadas = [];
+    const falhas = [];
+
+    for (const pub of publicacoes) {
+      const textoParaVetor = `
+        Tipo: ${pub.tipo}
+        Título: ${pub.titulo}
+        Espécie: ${pub.especie || 'Não informada'}
+        Raça: ${pub.raca || 'Não informada'}
+        Cor: ${pub.cor || 'Não informada'}
+        Local: ${pub.endereco_texto || 'Não informado'}
+        Descrição: ${pub.descricao}
+      `.trim();
+
+      const resposta = await gerarVetorBusca(textoParaVetor);
+      if (resposta) {
+        const embeddingString = `[${resposta.join(',')}]`;
+        await (prisma as any).$executeRawUnsafe(
+          `UPDATE publicacoes SET vetor_busca = $1::vector WHERE id = $2`,
+          embeddingString,
+          pub.id
+        );
+        processadas.push(pub.id);
+      } else {
+        falhas.push(pub.id);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500)); // Sleep
+    }
+    res.json({ sucesso: true, mensagem: `Gerados ${processadas.length}, Falhas ${falhas.length}.`, processadas, falhas });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// Rota Busca Semântica
+router.get("/busca-inteligente", async (req, res) => {
+  const { q, limite = '10' } = req.query;
+
+  if (!q || typeof q !== 'string') {
+    return res.status(400).json({ erro: "Forneça o termo de busca na query 'q'." });
+  }
+
+  try {
+    const vetor = await gerarVetorBusca(q);
+    if (!vetor) {
+      return res.status(500).json({ erro: "Não foi possível processar a busca." });
+    }
+
+    const vetorString = `[${vetor.join(',')}]`;
+
+    // A métrica <-> do pgvector calcula a distância euclidiana,
+    // mas <=> calcula a distância de cosseno, que é o padrão para modelos da openAI
+    // Quanto menor a distância, mais parecido é.
+    const resultados: any[] = await prisma.$queryRawUnsafe(`
+      SELECT
+        id, tipo, titulo, descricao, especie, raca, cor, endereco_texto,
+        fotos_urls, latitude, longitude, status, data_evento,
+        (vetor_busca <=> $1::vector) as "distancia"
+      FROM publicacoes
+      WHERE vetor_busca IS NOT NULL
+      ORDER BY "distancia" ASC
+      LIMIT $2
+    `, vetorString, parseInt(limite as string, 10));
+
+    res.status(200).json(resultados);
+  } catch (error) {
+    console.error("Erro na busca inteligente:", error);
+    res.status(500).json({ erro: "Erro ao realizar busca inteligente." });
+  }
+});
+
 router.post("/", async (req, res) => {
   const valida = validarPublicacao(req.body)
   
@@ -118,7 +196,31 @@ router.post("/", async (req, res) => {
       }
     })
 
-    // Email de confirmação (removido parâmetro extra)
+    try {
+      const textoParaVetor = `
+        Tipo: ${dados.tipo}
+        Título: ${dados.titulo}
+        Espécie: ${dados.especie || 'Não informada'}
+        Raça: ${dados.raca || 'Não informada'}
+        Cor: ${dados.cor || 'Não informada'}
+        Local: ${dados.endereco_texto || 'Não informado'}
+        Descrição: ${dados.descricao}
+      `.trim();
+
+      const vetor = await gerarVetorBusca(textoParaVetor);
+      if (vetor) {
+        const vetorString = `[${vetor.join(',')}]`;
+        await prisma.$executeRawUnsafe(
+          `UPDATE publicacoes SET vetor_busca = $1::vector WHERE id = $2`,
+          vetorString,
+          publicacao.id
+        );
+      }
+    } catch (vetorError) {
+      console.error("Erro ao gerar/salvar vetor de busca:", vetorError);
+    }
+
+    // Email de confirmaÃ§Ã£o (removido parÃ¢metro extra)
     try {
       await enviaEmail(
         publicacao.usuario.nome,
@@ -875,7 +977,32 @@ router.post("/com-fotos", (req, res) => {
         }
       });
 
-      // Enviar email de confirmação
+      // Gerar vetor de busca
+      try {
+        const textoParaVetor = `
+          Tipo: ${resultado.data.tipo}
+          Título: ${resultado.data.titulo}
+          Espécie: ${resultado.data.especie || 'Não informada'}
+          Raça: ${resultado.data.raca || 'Não informada'}
+          Cor: ${resultado.data.cor || 'Não informada'}
+          Local: ${resultado.data.endereco_texto || 'Não informado'}
+          Descrição: ${resultado.data.descricao}
+        `.trim();
+
+        const vetor = await gerarVetorBusca(textoParaVetor);
+        if (vetor) {
+          const vetorString = `[${vetor.join(',')}]`;
+          await prisma.$executeRawUnsafe(
+            `UPDATE publicacoes SET vetor_busca = $1::vector WHERE id = $2`,
+            vetorString,
+            publicacao.id
+          );
+        }
+      } catch (vetorError) {
+        console.error("Erro ao gerar/salvar vetor de busca na rota com-fotos:", vetorError);
+      }
+
+      // Enviar email de confirmaÃ§Ã£o
       try {
         await enviaEmail(
           publicacao.usuario.nome,
