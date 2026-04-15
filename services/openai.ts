@@ -1,21 +1,17 @@
-import { OpenAI } from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export const gerarVetorBusca = async (texto: string): Promise<number[] | null> => {
   if (!texto) return null;
 
   try {
-    const resposta = await openai.embeddings.create({
-      model: 'text-embedding-3-small',
-      input: texto,
-    });
-
-    return resposta.data[0].embedding;
+    const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+    const result = await model.embedContent(texto);
+    
+    return result.embedding.values;
   } catch (error) {
-    console.error('Erro ao gerar vetor de busca com OpenAI:', error);
+    console.error('Erro ao gerar vetor de busca com Gemini:', error);
     return null;
   }
 };
