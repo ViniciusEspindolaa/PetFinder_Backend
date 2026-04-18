@@ -67,13 +67,16 @@ const petAdocaoSchema = publicacaoBaseSchema.extend({
 })
 
 const petResgateSchema = publicacaoBaseSchema.extend({
-  especie: z.enum(["CACHORRO", "GATO", "OUTRO"]), 
+  especie: z.enum(["CACHORRO", "GATO", "OUTRO"]),
+  nome_pet: z.string().max(40).optional(),
   raca: z.string().max(40).optional(),
   porte: z.enum(["PEQUENO", "MEDIO", "GRANDE"]).optional(),
   cor: z.string().max(20).optional(),
   sexo: z.enum(["MACHO", "FEMEA", "INDEFINIDO"]).optional(),
   idade: z.number().min(0).optional(),
-  unidadeIdade: z.enum(["ANOS", "MESES"]).optional()
+  unidadeIdade: z.enum(["ANOS", "MESES"]).optional(),
+  urgencia: z.enum(["BAIXA", "MEDIA", "ALTA"]).optional(),
+  condicao_medica: z.string().max(255).optional()
 })
 
 // Função para validar baseada no tipo
@@ -105,7 +108,7 @@ function validarPublicacao(dados: any) {
 // Rota para forçar os vetores antigos (Tirar de produção posteriormente ou usar middleware)
 router.get("/gerar-vetores-antigos", async (req, res) => {
   try {
-    const publicacoes = await prisma.publicacao.findMany({ select: { id: true, tipo: true, titulo: true, descricao: true, especie: true, raca: true, cor: true, endereco_texto: true } });
+    const publicacoes = await prisma.publicacao.findMany({ select: { id: true, tipo: true, titulo: true, descricao: true, especie: true, raca: true, cor: true, endereco_texto: true, nome_pet: true, bairro: true, cidade: true } });
     const processadas = [];
     const falhas = [];
 
@@ -113,10 +116,15 @@ router.get("/gerar-vetores-antigos", async (req, res) => {
       const textoParaVetor = `
         Tipo: ${pub.tipo}
         Título: ${pub.titulo}
+        Nome: ${pub.nome_pet || 'Não informado'}
         Espécie: ${pub.especie || 'Não informada'}
         Raça: ${pub.raca || 'Não informada'}
         Cor: ${pub.cor || 'Não informada'}
         Local: ${pub.endereco_texto || 'Não informado'}
+        Bairro: ${pub.bairro || 'Não informado'}
+        Cidade: ${pub.cidade || 'Não informada'}
+        Urgência: ${(pub as any).urgencia || 'Não informada'}
+        Condição Médica: ${(pub as any).condicao_medica || 'Não informada'}
         Descrição: ${pub.descricao}
       `.trim();
 
@@ -200,10 +208,15 @@ router.post("/", async (req, res) => {
       const textoParaVetor = `
         Tipo: ${dados.tipo}
         Título: ${dados.titulo}
+        Nome: ${('nome_pet' in dados ? (dados as any).nome_pet : 'Não informado') || 'Não informado'}
         Espécie: ${dados.especie || 'Não informada'}
         Raça: ${dados.raca || 'Não informada'}
         Cor: ${dados.cor || 'Não informada'}
         Local: ${dados.endereco_texto || 'Não informado'}
+        Bairro: ${dados.bairro || 'Não informado'}
+        Cidade: ${dados.cidade || 'Não informada'}
+        Urgência: ${(dados as any).urgencia || 'Não informada'}
+        Condição Médica: ${(dados as any).condicao_medica || 'Não informada'}
         Descrição: ${dados.descricao}
       `.trim();
 
@@ -963,8 +976,8 @@ router.post("/com-fotos", (req, res) => {
       const resultado = validarPublicacao(dadosPublicacao);
       
       if (!resultado.success) {
-        return res.status(400).json({ 
-          erro: "Dados inválidos", 
+        console.error("Zod Validation Error:", JSON.stringify(resultado.error.issues, null, 2));
+        return res.status(400).json({
           detalhes: resultado.error.issues 
         });
       }
@@ -982,10 +995,15 @@ router.post("/com-fotos", (req, res) => {
         const textoParaVetor = `
           Tipo: ${resultado.data.tipo}
           Título: ${resultado.data.titulo}
+          Nome: ${('nome_pet' in resultado.data ? (resultado.data as any).nome_pet : 'Não informado') || 'Não informado'}
           Espécie: ${resultado.data.especie || 'Não informada'}
           Raça: ${resultado.data.raca || 'Não informada'}
           Cor: ${resultado.data.cor || 'Não informada'}
           Local: ${resultado.data.endereco_texto || 'Não informado'}
+          Bairro: ${resultado.data.bairro || 'Não informado'}
+          Cidade: ${resultado.data.cidade || 'Não informada'}
+          Urgência: ${(resultado.data as any).urgencia || 'Não informada'}
+          Condição Médica: ${(resultado.data as any).condicao_medica || 'Não informada'}
           Descrição: ${resultado.data.descricao}
         `.trim();
 

@@ -85,8 +85,14 @@ model Publicacao {
 
     vetorBusca        Unsupported("vector(3072)")? @map("vetor_busca")
 
+    // Campos de Resgate
+    urgencia          NivelUrgencia?
+    condicao_medica   String?       @db.VarChar(255)
+
     @@map("publicacoes")
-  }model Evento {
+}
+
+model Evento {
   id                Int           @id @default(autoincrement())
   titulo            String        @db.VarChar(100)
   descricao         String
@@ -133,6 +139,12 @@ model Denuncia {
   data_criacao DateTime   @default(now())
 
   @@map("denuncias")
+}
+
+enum NivelUrgencia {
+  BAIXA
+  MEDIA
+  ALTA
 }
 
 enum TiposPet {
