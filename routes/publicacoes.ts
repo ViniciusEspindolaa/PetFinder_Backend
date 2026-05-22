@@ -303,11 +303,15 @@ async function notificarUsuariosProximos(publicacao: any) {
         await enviaEmailNotificacao(u.nome, u.email, publicacao)
 
         // 2. Cria Notificação no Banco
+        let acaoText = "perdido";
+        if (publicacao.tipo === "ADOCAO") acaoText = "disponível para adoção";
+        if (publicacao.tipo === "ACHADO") acaoText = "encontrado";
+
         await prisma.notificacao.create({
           data: {
             usuarioId: u.id,
-            titulo: `Novo pet perdido próximo a você!`,
-            corpo: `Um ${publicacao.especie.toLowerCase()} foi perdido a ${distancia.toFixed(1)}km de você. Ajude a encontrar!`,
+            titulo: `Novo pet ${acaoText} próximo a você!`,
+            corpo: `Um ${publicacao.especie.toLowerCase()} está a ${distancia.toFixed(1)}km de você. Confira!`,
             lida: false,
             canal: 'APP',
             dados: {

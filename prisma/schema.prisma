@@ -31,10 +31,13 @@ model Usuario {
   publicacoes   Publicacao[]
   avistamentos  Avistamento[]
   eventos       Evento[]
+  servicos      Servico[]
+  agendamentos  Agendamento[]
   socialAccounts SocialAccount[]
   notificacoes  Notificacao[]
   inscricoesPush InscricaoPush[]
   denuncias     Denuncia[]
+  inscricoesEvento InscricaoEvento[]
   @@map("usuarios")
 }
 
@@ -108,7 +111,76 @@ model Evento {
   data_criacao      DateTime      @default(now())
   usuario           Usuario       @relation(fields: [usuarioId], references: [id])
   usuarioId         String        @db.VarChar(36)
+  inscricoes        InscricaoEvento[]
   @@map("eventos")
+}
+
+model InscricaoEvento {
+  id        Int      @id @default(autoincrement())
+  evento    Evento   @relation(fields: [eventoId], references: [id], onDelete: Cascade)
+  eventoId  Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId String   @db.VarChar(36)
+  createdAt DateTime @default(now())
+
+  @@unique([eventoId, usuarioId])
+  @@map("inscricoes_evento")
+}
+
+model Servico {
+  id                Int           @id @default(autoincrement())
+  nome              String        @db.VarChar(100)
+  tipo              TipoServico
+  descricao         String
+  fotos_urls        String[]
+  telefone          String?       @db.VarChar(15)
+  email             String?       @db.VarChar(100)
+  link_rede_social  String?       @db.VarChar(255)
+  endereco_texto    String        @db.VarChar(255)
+  bairro            String?       @db.VarChar(60)
+  cidade            String?       @db.VarChar(60)
+  latitude          Decimal       @db.Decimal(10, 7)
+  longitude         Decimal       @db.Decimal(10, 7)
+  horario           String?       @db.VarChar(100) // Ex: "08:00-18:00 seg-sex, 09:00-14:00 sab"
+  
+  // Novos campos de Serviço e Agendamento
+  valor_base        Decimal?      @db.Decimal(10, 2)
+    variacoes         Json?
+  especies_atendidas Especies[]
+  dias_funcionamento String[]     // ["1", "2", "3", "4", "5"] -> Seg a Sex
+  hora_inicio       String?       @db.VarChar(5)
+  hora_fim          String?       @db.VarChar(5)
+  duracao_agendamento Int?        // em minutos
+  atende_domicilio  Boolean       @default(false)
+  taxa_domicilio    Decimal?      @db.Decimal(10, 2)
+
+  avaliacoes        Decimal?      @db.Decimal(2, 1) // 0-5
+  total_avaliacoes  Int           @default(0)
+  oferece_agendamento Boolean     @default(false)
+  tipo_agendamento  String?       @db.VarChar(20) // "HORARIO", "TURNO"
+  data_criacao      DateTime      @default(now())
+  usuario           Usuario       @relation(fields: [usuarioId], references: [id])
+  usuarioId         String        @db.VarChar(36)
+  agendamentos      Agendamento[]
+  @@map("servicos")
+}
+
+model Agendamento {
+  id                    Int                 @id @default(autoincrement())
+  servico               Servico             @relation(fields: [servicoId], references: [id])
+  servicoId             Int
+  usuario               Usuario             @relation(fields: [usuarioId], references: [id])
+  usuarioId             String              @db.VarChar(36)
+  data_hora             DateTime
+  horario_agendado      String?             @db.VarChar(5) // Para tipo HORARIO ex "09:00"
+  turno_agendado        String?             @db.VarChar(20) // Para tipo TURNO ex "MANHA", "TARDE", "NOITE"
+  observacao            String?             @db.VarChar(500)
+  status                StatusAgendamento   @default(PENDENTE)
+  forma_pagamento       FormaPagamento
+  valor_simulado        Decimal             @db.Decimal(10, 2)
+  data_criacao          DateTime            @default(now())
+  
+  @@map("agendamentos")
 }
 
 model Avistamento {
@@ -168,6 +240,35 @@ enum StatusEvento {
   EM_ANDAMENTO
   CONCLUIDO
   CANCELADO
+}
+
+enum TipoServico {
+  // Novos tipos
+  PET_SITTER
+  DOG_WALKER
+  BANHO_TOSA
+  HOSPEDAGEM_CRECHE
+  ADESTRADOR
+  // Tipos antigos para não perder dados
+  VETERINARIO
+  PET_SHOP
+  TREINADOR
+  PASSEADOR
+  HOSPEDAGEM
+  GROOMING
+  OUTROS
+}
+
+enum StatusAgendamento {
+  PENDENTE
+  CONFIRMADO
+  CANCELADO
+}
+
+enum FormaPagamento {
+  CARTAO
+  PIX
+  DINHEIRO
 }
 
 enum Especies {

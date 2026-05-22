@@ -24,7 +24,9 @@ import routesMaps from './routes/maps'
 import routesUpload from './routes/upload'
 import routesAuth from './routes/auth'
 import routesDenuncias from './routes/denuncias'
-import iaRoutes from './routes/ia';
+import iaRoutes from './routes/ia'
+import routesServicos from './routes/servicos'
+import routesAgendamentos from './routes/agendamentos';
 
 // Validar configurações antes de iniciar
 validateConfig()
@@ -205,7 +207,9 @@ app.use('/api/auth', routesAuth)
 app.use('/api/denuncias', routesDenuncias)
 app.use('/api/notificacoes', notificacoesRoutes)
 app.use('/api/push', pushRoutes)
-app.use('/api/ia', iaRoutes);
+app.use('/api/ia', iaRoutes)
+app.use('/api/servicos', routesServicos)
+app.use('/api/agendamentos', routesAgendamentos);
 
 // Rota raiz - redireciona para info da API
 app.get('/', (req, res) => {

@@ -1,8 +1,9 @@
 import { prisma } from "../config/prisma"
-import { Router } from 'express'
+import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import nodemailer from 'nodemailer'
 import { getEmailTemplate } from "../utils/emailTemplate"
+import { verificarToken } from "../middleware/auth"
 
 const router = Router()
 
@@ -77,7 +78,10 @@ router.get("/", async (req, res) => {
   try {
     const eventos = await prisma.evento.findMany({
       include: {
-        usuario: true
+        usuario: true,
+        inscricoes: {
+          select: { usuarioId: true }
+        }
       },
       orderBy: { data_hora_inicio: 'asc' }
     })
@@ -103,7 +107,8 @@ router.get("/proximos", async (req, res) => {
         status: 'AGENDADO'
       },
       include: {
-        usuario: true
+        usuario: true,
+        inscricoes: { select: { usuarioId: true } }
       },
       orderBy: { data_hora_inicio: 'asc' }
     })
@@ -192,7 +197,8 @@ router.get("/:id", async (req, res) => {
     const evento = await prisma.evento.findUnique({
       where: { id: Number(id) },
       include: {
-        usuario: true
+        usuario: true,
+        inscricoes: { select: { usuarioId: true } }
       }
     })
     
@@ -324,6 +330,56 @@ router.delete("/:id", async (req, res) => {
     res.status(400).json({ erro: error })
   }
 })
+
+// PATCH - Toggle de presenca no evento
+router.post("/:id/inscricao", verificarToken, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tokenData = (req as any).usuario;
+
+  if (!tokenData || !tokenData.id) {
+    return res.status(401).json({ error: "Não autorizado" });
+  }
+
+  try {
+    const evento = await prisma.evento.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!evento) {
+      return res.status(404).json({ error: "Evento não encontrado" });
+    }
+
+    const inscricaoExistente = await prisma.inscricaoEvento.findUnique({
+      where: {
+        eventoId_usuarioId: {
+          eventoId: Number(id),
+          usuarioId: tokenData.id
+        }
+      }
+    });
+
+    if (inscricaoExistente) {
+      // Remover inscricao
+      await prisma.inscricaoEvento.delete({
+        where: { id: inscricaoExistente.id }
+      });
+      res.status(200).json({ attending: false, message: "Inscrição removida" });
+    } else {
+      // Adicionar inscricao
+      await prisma.inscricaoEvento.create({
+        data: {
+          eventoId: Number(id),
+          usuarioId: tokenData.id
+        }
+      });
+      res.status(201).json({ attending: true, message: "Inscrição confirmada" });
+    }
+
+  } catch (error) {
+    console.error("Erro ao alternar inscrição:", error);
+    res.status(500).json({ error: "Erro interno no servidor" });
+  }
+});
 
 // PATCH - Alterar status do evento
 router.patch("/:id/status", async (req, res) => {
