@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { uploadPetPhotos, uploadAvatar, uploadEventPhoto, handleUploadError, extractFileInfo } from '../middleware/upload';
+import { uploadPetPhotos, uploadAvatar, uploadEventPhoto, uploadVerificacaoDoc, handleUploadError, extractFileInfo } from '../middleware/upload';
 import { validateCloudinaryConfig, getImageUrl, deleteFromCloudinary } from '../config/cloudinary';
 import { verificarToken } from '../middleware/auth';
 import { logger } from '../middleware/logger';
@@ -283,6 +283,39 @@ router.post('/evento',
           erro: 'Erro interno no processamento',
           codigo: 'PROCESSING_ERROR'
         });
+      }
+    });
+  }
+);
+
+router.post('/verificacao',
+  verificarToken,
+  checkCloudinaryConfig,
+  (req: Request, res: Response) => {
+    uploadVerificacaoDoc(req, res, (error) => {
+      if (error) {
+        return handleUploadError(error, req, res, () => {});
+      }
+
+      try {
+        const file = req.file;
+        if (!file) {
+          return res.status(400).json({
+            erro: 'Nenhum documento foi enviado',
+            detalhes: 'Envie uma imagem usando o campo "documento"'
+          });
+        }
+
+        const docInfo = extractFileInfo(file);
+        res.status(200).json({
+          sucesso: true,
+          message: 'Documento enviado com sucesso',
+          documento: docInfo,
+          documento_url: docInfo.url
+        });
+      } catch (error) {
+        logger.error('Erro no upload de verificação:', error);
+        res.status(500).json({ erro: 'Erro interno no processamento', codigo: 'PROCESSING_ERROR' });
       }
     });
   }

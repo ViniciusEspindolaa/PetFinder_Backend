@@ -714,6 +714,123 @@ router.get("/buscar/proximidade", async (req, res) => {
   }
 })
 
+// Busca pets parecidos (atributos da IA) próximos ao usuário — cruza PERDIDO ↔ ENCONTRADO
+router.get("/buscar/similares-proximos", async (req, res) => {
+  try {
+    const { latitude, longitude, raio_km, especie, raca, cor, tipo, porte } = req.query
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({ erro: "Latitude e longitude são obrigatórias" })
+    }
+
+    const lat = parseFloat(latitude as string)
+    const lng = parseFloat(longitude as string)
+    const raio = parseFloat(raio_km as string) || 15
+
+    const deltaLat = raio / 111
+    const deltaLng = raio / (111 * Math.cos(lat * Math.PI / 180))
+
+    const tipoBusca = (tipo as string)?.toUpperCase()
+    const tiposOpostos: Record<string, string[]> = {
+      PERDIDO: ["ENCONTRADO"],
+      ENCONTRADO: ["PERDIDO"],
+    }
+    const tiposFiltro = tiposOpostos[tipoBusca] ?? ["PERDIDO", "ENCONTRADO"]
+
+    const where: any = {
+      latitude: { gte: lat - deltaLat, lte: lat + deltaLat },
+      longitude: { gte: lng - deltaLng, lte: lng + deltaLng },
+      status: { not: "RESOLVIDO" },
+      tipo: { in: tiposFiltro },
+    }
+
+    if (especie) where.especie = (especie as string).toUpperCase()
+
+    const candidatos = await prisma.publicacao.findMany({
+      where,
+      include: {
+        usuario: { select: { id: true, nome: true, telefone: true } },
+      },
+      take: 50,
+      orderBy: { data_publicacao: "desc" },
+    })
+
+    const racaNorm = normBreed((raca as string) || "")
+    const corNorm = (cor as string)?.toLowerCase().trim() || ""
+    const porteNorm = (porte as string)?.toUpperCase() || ""
+
+    const porteMap: Record<string, string> = {
+      SMALL: "PEQUENO",
+      MEDIUM: "MEDIO",
+      LARGE: "GRANDE",
+      PEQUENO: "PEQUENO",
+      MEDIO: "MEDIO",
+      GRANDE: "GRANDE",
+    }
+    const porteAlvo = porteMap[porteNorm] || porteNorm
+
+    // Raças ambíguas que não devem bloquear correspondências por raça
+    const RACAS_AMBIGUAS = ["srd", "vira-lata", "vira lata", "desconhecida", "sem raca", "sem raça", "misturado", "mixed"]
+    const racaEhAmbigua = (r: string) => !r || RACAS_AMBIGUAS.some((t) => r.includes(t))
+
+    const resultados = candidatos
+      .map((pub) => {
+        const pubRaca = normBreed(pub.raca || "")
+        const pubCor = (pub.cor || "").toLowerCase()
+
+        // --- Score de raça ---
+        let breedScore = 0
+        if (racaNorm && pubRaca) {
+          if (pubRaca === racaNorm) breedScore = 15
+          else if (pubRaca.includes(racaNorm) || racaNorm.includes(pubRaca)) breedScore = 12
+          else {
+            const palavrasA = racaNorm.split(/\s+/).filter((p) => p.length > 3)
+            const palavrasB = pubRaca.split(/\s+/).filter((p) => p.length > 3)
+            if (palavrasA.some((p) => pubRaca.includes(p)) || palavrasB.some((p) => racaNorm.includes(p))) {
+              breedScore = 8
+            }
+          }
+        }
+
+        // Se a busca tem raça conhecida E o candidato também tem raça conhecida, exige correspondência.
+        // Isso evita que um Golden Retriever apareça ao buscar por Yorkshire.
+        if (racaNorm && !racaEhAmbigua(racaNorm) && pubRaca && !racaEhAmbigua(pubRaca) && breedScore === 0) {
+          return null
+        }
+
+        let score = breedScore
+
+        if (corNorm && pubCor) {
+          if (pubCor.includes(corNorm) || corNorm.includes(pubCor)) score += 2
+        }
+
+        if (porteAlvo && pub.porte === porteAlvo) score += 1
+
+        const distancia_km = haversineKm(lat, lng, Number(pub.latitude), Number(pub.longitude))
+        if (distancia_km <= raio) {
+          score += Math.max(0, 2 - distancia_km / (raio / 2))
+        }
+
+        return { ...pub, distancia_km: Math.round(distancia_km * 10) / 10, score_compatibilidade: Math.round(score * 10) / 10, _breedScore: breedScore }
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null && p.distancia_km <= raio && p.score_compatibilidade >= 1)
+      // Pets com match de raça sempre sobem: primeiro por breedScore desc, depois score total, depois distância
+      .sort((a, b) => b._breedScore - a._breedScore || b.score_compatibilidade - a.score_compatibilidade || a.distancia_km - b.distancia_km)
+      .slice(0, 5)
+      .map(({ _breedScore, ...pub }) => pub)
+
+    res.status(200).json({
+      centro: { latitude: lat, longitude: lng },
+      raio_km: raio,
+      total: resultados.length,
+      publicacoes: resultados,
+    })
+  } catch (error) {
+    console.error("Erro em similares-proximos:", error)
+    res.status(500).json({ erro: "Erro ao buscar pets similares próximos" })
+  }
+})
+
 // Busca por tipo específico
 router.get("/tipo/:tipo", async (req, res) => {
   const { tipo } = req.params
@@ -1247,6 +1364,11 @@ router.patch("/:id/finalizar", async (req, res) => {
 })
 
 export default router
+
+// Normaliza raça para comparação: remove acentos, lowercase, trim
+function normBreed(s: string): string {
+  return s.toLowerCase().trim().normalize("NFD").replace(/[̀-ͯ]/g, "")
+}
 
 // Helper Haversine function
 function haversineKm(lat1:number, lon1:number, lat2:number, lon2:number){

@@ -99,8 +99,8 @@ router.post("/", async (req, res) => {
         usuarioLogadoId: usuario.id,
         usuarioLogadoNome: usuario.nome
       },
-        process.env.JWT_SECRET as string,
-        { expiresIn: "1h" }
+        process.env.JWT_SECRET || 'fallback_secret',
+        { expiresIn: "7d" }
       )
 
       res.status(200).json({
@@ -110,6 +110,9 @@ router.post("/", async (req, res) => {
         telefone: usuario.telefone,
         latitude: usuario.latitude,
         longitude: usuario.longitude,
+        foto_perfil: usuario.foto_perfil,
+        telefone_verificado: usuario.telefone_verificado,
+        email_verificado: usuario.email_verificado,
         token
       })
     } else {

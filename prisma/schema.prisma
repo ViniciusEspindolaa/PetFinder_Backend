@@ -28,6 +28,14 @@ model Usuario {
   resetToken    String?  @db.VarChar(100)
   resetTokenExpires DateTime?
   createdAt     DateTime @default(now())
+  // Verificação de prestador (Fase 1)
+  foto_perfil           String?   @db.VarChar(500)
+  telefone_verificado   Boolean   @default(false)
+  email_verificado      Boolean   @default(false)
+  telefone_codigo_hash  String?   @db.VarChar(128)
+  telefone_codigo_expira DateTime?
+  email_codigo_hash     String?   @db.VarChar(128)
+  email_codigo_expira   DateTime?
   publicacoes   Publicacao[]
   avistamentos  Avistamento[]
   eventos       Evento[]
@@ -38,7 +46,27 @@ model Usuario {
   inscricoesPush InscricaoPush[]
   denuncias     Denuncia[]
   inscricoesEvento InscricaoEvento[]
+  verificacaoPrestador VerificacaoPrestador?
   @@map("usuarios")
+}
+
+model VerificacaoPrestador {
+  id              String   @id @default(uuid()) @db.VarChar(36)
+  usuarioId       String   @unique @db.VarChar(36)
+  cpf_hash        String   @db.VarChar(128)
+  cpf_ultimos4    String   @db.VarChar(4)
+  doc_frente_url  String?  @db.VarChar(500)
+  doc_verso_url   String?  @db.VarChar(500)
+  selfie_url      String?  @db.VarChar(500)
+  status          StatusVerificacaoPrestador @default(PENDENTE)
+  motivo_rejeicao String?  @db.VarChar(500)
+  verificado_em   DateTime?
+  verificado_por  String?  @db.VarChar(36)
+  criado_em       DateTime @default(now())
+  atualizado_em   DateTime @updatedAt
+  usuario         Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@map("verificacoes_prestador")
 }
 
 model SocialAccount {
@@ -112,6 +140,7 @@ model Evento {
   usuario           Usuario       @relation(fields: [usuarioId], references: [id])
   usuarioId         String        @db.VarChar(36)
   inscricoes        InscricaoEvento[]
+  denuncias         Denuncia[]
   @@map("eventos")
 }
 
@@ -158,10 +187,12 @@ model Servico {
   total_avaliacoes  Int           @default(0)
   oferece_agendamento Boolean     @default(false)
   tipo_agendamento  String?       @db.VarChar(20) // "HORARIO", "TURNO"
+  publicado         Boolean       @default(false)
   data_criacao      DateTime      @default(now())
   usuario           Usuario       @relation(fields: [usuarioId], references: [id])
   usuarioId         String        @db.VarChar(36)
   agendamentos      Agendamento[]
+  denuncias         Denuncia[]
   @@map("servicos")
 }
 
@@ -178,6 +209,7 @@ model Agendamento {
   status                StatusAgendamento   @default(PENDENTE)
   forma_pagamento       FormaPagamento
   valor_simulado        Decimal             @db.Decimal(10, 2)
+  atendimento_domicilio Boolean             @default(false)
   data_criacao          DateTime            @default(now())
   
   @@map("agendamentos")
@@ -200,15 +232,19 @@ model Avistamento {
 }
 
 model Denuncia {
-  id           Int        @id @default(autoincrement())
-  publicacaoId Int
-  publicacao   Publicacao @relation(fields: [publicacaoId], references: [id])
-  usuarioId    String?    @db.VarChar(36) // Opcional, se permitir anônimo
-  usuario      Usuario?   @relation(fields: [usuarioId], references: [id])
-  motivo       String     @db.VarChar(50)
-  descricao    String?    @db.Text
+  id           Int         @id @default(autoincrement())
+  publicacaoId Int?
+  publicacao   Publicacao? @relation(fields: [publicacaoId], references: [id])
+  eventoId     Int?
+  evento       Evento?     @relation(fields: [eventoId], references: [id])
+  servicoId    Int?
+  servico      Servico?    @relation(fields: [servicoId], references: [id])
+  usuarioId    String?     @db.VarChar(36)
+  usuario      Usuario?    @relation(fields: [usuarioId], references: [id])
+  motivo       String      @db.VarChar(50)
+  descricao    String?     @db.Text
   status       StatusDenuncia @default(PENDENTE)
-  data_criacao DateTime   @default(now())
+  data_criacao DateTime    @default(now())
 
   @@map("denuncias")
 }
@@ -299,6 +335,14 @@ enum StatusDenuncia {
   EM_ANALISE
   ACEITA
   REJEITADA
+}
+
+enum StatusVerificacaoPrestador {
+  NAO_SOLICITADO
+  PENDENTE
+  EM_ANALISE
+  APROVADO
+  REJEITADO
 }
 
 model Notificacao {

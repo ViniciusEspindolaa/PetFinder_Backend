@@ -27,6 +27,7 @@ import routesDenuncias from './routes/denuncias'
 import iaRoutes from './routes/ia'
 import routesServicos from './routes/servicos'
 import routesAgendamentos from './routes/agendamentos';
+import routesVerificacao from './routes/verificacao';
 
 // Validar configurações antes de iniciar
 validateConfig()
@@ -73,16 +74,21 @@ app.use(helmet({
 }))
 app.use(compression())
 
-// Rate limiting
+// Rate limiting — mais permissivo em desenvolvimento (perfil, mapa, notificações etc.)
 const limiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
-  max: config.rateLimit.max,
+  max: config.nodeEnv === 'development' ? 2000 : config.rateLimit.max,
   message: { 
     erro: "Muitas requisições deste IP. Tente novamente em alguns minutos.",
     retryAfter: Math.ceil(config.rateLimit.windowMs / 1000 / 60) + " minutos"
   },
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  skip: (req) => {
+    if (config.nodeEnv !== 'development') return false
+    const ip = req.ip || ''
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
+  },
 })
 app.use(limiter)
 
@@ -210,6 +216,7 @@ app.use('/api/push', pushRoutes)
 app.use('/api/ia', iaRoutes)
 app.use('/api/servicos', routesServicos)
 app.use('/api/agendamentos', routesAgendamentos);
+app.use('/api/verificacao', routesVerificacao);
 
 // Rota raiz - redireciona para info da API
 app.get('/', (req, res) => {

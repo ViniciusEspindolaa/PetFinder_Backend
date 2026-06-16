@@ -7,11 +7,22 @@ import { getEmailTemplate } from "../utils/emailTemplate"
 const router = Router()
 
 const denunciaSchema = z.object({
-  publicacaoId: z.number(),
+  publicacaoId: z.number().optional(),
+  eventoId: z.number().optional(),
+  servicoId: z.number().optional(),
   usuarioId: z.string().optional(),
   motivo: z.string().min(1),
   descricao: z.string().optional()
-})
+}).refine(
+  (data) => !!(data.publicacaoId || data.eventoId || data.servicoId),
+  { message: "Informe publicacaoId, eventoId ou servicoId" }
+)
+
+const tipoLabels: Record<string, string> = {
+  publicacao: "publicação",
+  evento: "evento",
+  servico: "serviço",
+}
 
 router.post("/", async (req, res) => {
   const validacao = denunciaSchema.safeParse(req.body)
@@ -20,33 +31,25 @@ router.post("/", async (req, res) => {
     return res.status(400).json({ erro: validacao.error })
   }
 
-  const { publicacaoId, usuarioId, motivo, descricao } = validacao.data
+  const { publicacaoId, eventoId, servicoId, usuarioId, motivo, descricao } = validacao.data
 
   try {
     const denuncia = await prisma.denuncia.create({
       data: {
         publicacaoId,
+        eventoId,
+        servicoId,
         usuarioId,
         motivo,
         descricao
       },
       include: {
-        publicacao: {
-          include: {
-            usuario: true
-          }
-        }
+        publicacao: { include: { usuario: true } },
+        evento: { include: { usuario: true } },
+        servico: { include: { usuario: true } },
       }
     })
 
-    // Enviar email de confirmação da denúncia para o admin (ou para o usuário que denunciou, se tiver email)
-    // Neste caso, vamos simular envio para um admin ou logar
-    // Se quisermos enviar para o dono da publicação avisando da denúncia (cuidado com spam/abuso)
-    
-    // Vamos enviar um email para o dono da publicação informando que houve uma denúncia (opcional, mas pedido pelo usuário "confirmar denuncia")
-    // "confirmar denuncia" pode significar confirmar para quem denunciou que a denúncia foi recebida.
-    // Como usuarioId é opcional, se tiver usuarioId, buscamos o email dele.
-    
     if (usuarioId) {
       const denunciante = await prisma.usuario.findUnique({ where: { id: usuarioId } })
       if (denunciante) {
@@ -72,11 +75,30 @@ async function enviaEmailConfirmacaoDenuncia(nome: string, email: string, denunc
     }
   });
 
+  let tipo = "publicacao"
+  let titulo = ""
+  let link = process.env.FRONTEND_URL || 'http://localhost:3000'
+
+  if (denuncia.publicacao) {
+    tipo = "publicacao"
+    titulo = denuncia.publicacao.titulo
+    link = `${link}/pet/${denuncia.publicacao.id}`
+  } else if (denuncia.evento) {
+    tipo = "evento"
+    titulo = denuncia.evento.titulo
+    link = `${link}/eventos/${denuncia.evento.id}`
+  } else if (denuncia.servico) {
+    tipo = "servico"
+    titulo = denuncia.servico.nome
+    link = `${link}/servicos/${denuncia.servico.id}`
+  }
+
   const subject = "Denúncia Recebida - PetFinder";
-  
+  const tipoLabel = tipoLabels[tipo] || "conteúdo";
+
   const content = `
     <h2>Olá ${nome}!</h2>
-    <p>Recebemos sua denúncia referente à publicação <span class="highlight">"${denuncia.publicacao.titulo}"</span>.</p>
+    <p>Recebemos sua denúncia referente à ${tipoLabel} <span class="highlight">"${titulo}"</span>.</p>
     
     <div class="info-box">
       <h3>Detalhes da Denúncia</h3>
@@ -89,7 +111,7 @@ async function enviaEmailConfirmacaoDenuncia(nome: string, email: string, denunc
     <p>Agradecemos por ajudar a manter a comunidade segura.</p>
     
     <div style="text-align: center;">
-      <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/pet/${denuncia.publicacao.id}" class="button" style="color: #ffffff;">Ver Publicação Denunciada</a>
+      <a href="${link}" class="button" style="color: #ffffff;">Ver ${tipoLabel} denunciada</a>
     </div>
   `;
 

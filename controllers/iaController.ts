@@ -40,7 +40,18 @@ export const analyzePetImage = async (req: Request, res: Response) => {
     if (allDescriptors.length === 0) {
       throw new Error('Nenhum rótulo encontrado.');
     }
+    // NOVA VALIDAÇÃO: Verifica se a imagem é realmente de um animal
+    const isAnimal = allDescriptors.some(desc => {
+      const d = desc.toLowerCase();
+      return /\b(animal|pet|mammal|vertebrate|bird|reptile|amphibian|fish|insect|dog|cat|feline|canine|puppy|kitten|horse|pony|parrot|turtle|rabbit|bunny|fur|snout|whiskers|paw)\b/.test(d);
+    });
 
+    if (!isAnimal) {
+       return res.status(400).json({ 
+         error: true, 
+         message: 'A imagem não parece ser de um animal. Por favor, envie uma foto válida de um pet.' 
+       });
+    }
     // 2. Lógica para extrair as informações
     let type = 'other';
     let breed = 'Desconhecida';
@@ -69,10 +80,12 @@ export const analyzePetImage = async (req: Request, res: Response) => {
       'bird', 'birds', 'avian', 'waterfowl', 'fowl', 'poultry'
     ];
 
-    // Ignora descritores que apenas descrevam partes do corpo, acessórios ou cores
+    // Ignora descritores que apenas descrevam partes do corpo ou acessórios
+    // Nota: cores genéricas (golden, brown…) são tratadas abaixo via exactGenericTerms para
+    // não bloquear nomes de raças compostas como "golden retriever" ou "brown bear terrier"
     const ignoreIfContains = [
       'collar', 'leash', 'harness', 'tag', 'snout', 'whiskers', 'nose', 'eye', 'paw', 'fur', 'hair', 'breed', 'group', 'animal',
-      'black', 'white', 'brown', 'orange', 'grey', 'gray', 'golden', 'ojos azules', 'malayan'
+      'ojos azules', 'malayan'
     ];
 
     // Dicionário de tradução para as raças mais comuns (evita termos em inglês)
@@ -154,7 +167,7 @@ export const analyzePetImage = async (req: Request, res: Response) => {
       }
 
       if (!foundSrdFirst) {
-        for (let i = 0; i < Math.min(potentialBreeds.length, 7); i++) {
+        for (let i = 0; i < Math.min(potentialBreeds.length, 15); i++) {
           const currentLower = potentialBreeds[i].toLowerCase();
           
           // Heurística do Dobermann escondido pelo Pinscher
@@ -382,6 +395,7 @@ export const analyzePetImage = async (req: Request, res: Response) => {
       type,
       breed,
       size,
+      colors,
       description
     };
 

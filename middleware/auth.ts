@@ -50,7 +50,12 @@ export const verificarAdmin = (req: AuthRequest, res: Response, next: NextFuncti
     return res.status(401).json({ erro: "Usuário não autenticado" })
   }
 
-  if (req.usuario.tipo !== 'admin') {
+  const adminIds = (process.env.ADMIN_USER_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  if (req.usuario.tipo !== 'admin' && !adminIds.includes(req.usuario.id)) {
     logger.warn('Tentativa de acesso admin sem permissão', { 
       userId: req.usuario.id,
       path: req.path 

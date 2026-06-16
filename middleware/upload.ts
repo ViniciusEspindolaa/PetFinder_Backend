@@ -19,6 +19,8 @@ const storage = new CloudinaryStorage({
       folder = 'petfinder/pets';
     } else if (req.route?.path?.includes('avatar') || req.route?.path?.includes('usuarios')) {
       folder = 'petfinder/avatars';
+    } else if (req.route?.path?.includes('verificacao')) {
+      folder = 'petfinder/verificacao';
     } else if (req.route?.path?.includes('eventos')) {
       folder = 'petfinder/eventos';
     }
@@ -88,6 +90,7 @@ export const uploadAvatar = multer({
 // Middleware personalizado para diferentes tipos de upload
 export const uploadPetPhotos = multer(uploadConfig).array('fotos', 5);
 export const uploadEventPhoto = multer(uploadConfig).single('foto_evento');
+export const uploadVerificacaoDoc = multer(uploadConfig).single('documento');
 
 // Middleware de tratamento de erros de upload
 export const handleUploadError = (error: any, req: Request, res: any, next: any) => {
@@ -155,6 +158,7 @@ export default {
   uploadAvatar, 
   uploadPetPhotos, 
   uploadEventPhoto,
+  uploadVerificacaoDoc,
   handleUploadError,
   extractFileInfo
 };

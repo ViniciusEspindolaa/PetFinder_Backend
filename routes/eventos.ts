@@ -91,29 +91,38 @@ router.get("/", async (req, res) => {
   }
 })
 
-// GET - Buscar eventos próximos (próximos 30 dias)
+// GET - Buscar eventos próximos (futuros, com filtro opcional de dias)
 router.get("/proximos", async (req, res) => {
   try {
     const agora = new Date()
-    const proximoMes = new Date()
-    proximoMes.setDate(agora.getDate() + 30)
+    const diasParam = req.query.dias ? parseInt(req.query.dias as string) : null
+
+    const where: any = {
+      data_hora_inicio: { gte: agora },
+      status: 'AGENDADO'
+    }
+
+    if (diasParam && diasParam > 0) {
+      const limite = new Date()
+      limite.setDate(agora.getDate() + diasParam)
+      where.data_hora_inicio = { gte: agora, lte: limite }
+    }
 
     const eventos = await prisma.evento.findMany({
-      where: {
-        data_hora_inicio: {
-          gte: agora,
-          lte: proximoMes
-        },
-        status: 'AGENDADO'
-      },
+      where,
       include: {
         usuario: true,
         inscricoes: { select: { usuarioId: true } }
       },
       orderBy: { data_hora_inicio: 'asc' }
     })
+
+    const periodo = diasParam && diasParam > 0
+      ? `Próximos ${diasParam} dias`
+      : "Próximos eventos"
+
     res.status(200).json({
-      periodo: "Próximos 30 dias",
+      periodo,
       total: eventos.length,
       eventos
     })

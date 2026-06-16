@@ -2,9 +2,26 @@
 import { z } from "zod"
 import { PrismaClient } from "@prisma/client"
 import { verificarToken } from "../middleware/auth"
+import {
+  podePublicarServico,
+  motivoNaoPublicado,
+  usuarioSelectVerificacao,
+  contatoBasicoVerificado,
+  identidadeVerificada,
+} from "../utils/prestador"
 
 const router = Router()
 const prisma = new PrismaClient()
+
+function enriquecerServico(servico: any) {
+  const usuario = servico.usuario
+  return {
+    ...servico,
+    prestador_verificado: usuario ? contatoBasicoVerificado(usuario) : false,
+    identidade_verificada: usuario ? identidadeVerificada(usuario) : false,
+    motivo_nao_publicado: usuario ? motivoNaoPublicado(usuario, servico) : null,
+  }
+}
 
 const servicoSchema = z.object({
   nome: z.string().min(3).max(100),
@@ -65,6 +82,8 @@ router.get("/", async (req, res) => {
     }
     if (usuario_id) {
       where.usuarioId = usuario_id
+    } else {
+      where.publicado = true
     }
 
     const skip = (parseInt(pagina as string) - 1) * parseInt(limite as string)
@@ -72,9 +91,7 @@ router.get("/", async (req, res) => {
     const servicos = await prisma.servico.findMany({
       where,
       include: {
-        usuario: {
-          select: { id: true, nome: true, email: true, telefone: true },
-        },
+        usuario: { select: usuarioSelectVerificacao() },
       },
       skip,
       take: parseInt(limite as string),
@@ -84,7 +101,7 @@ router.get("/", async (req, res) => {
     const total = await prisma.servico.count({ where })
 
     res.json({
-      servicos,
+      servicos: servicos.map(enriquecerServico),
       total,
       pagina: parseInt(pagina as string),
       limite: parseInt(limite as string),
@@ -122,7 +139,8 @@ router.get("/proximos", async (req: Request, res: Response) => {
          sin(radians(${lat})) * sin(radians(latitude)))) AS distancia_km
       FROM servicos s
       JOIN usuarios u ON s."usuarioId" = u.id
-      WHERE (6371 * acos(cos(radians(${lat})) * cos(radians(latitude)) * 
+      WHERE s.publicado = true
+      AND (6371 * acos(cos(radians(${lat})) * cos(radians(latitude)) * 
          cos(radians(${lon}) - radians(longitude)) + 
          sin(radians(${lat})) * sin(radians(latitude)))) <= ${raioKm}
       ORDER BY distancia_km ASC
@@ -144,14 +162,12 @@ router.get("/usuario/:usuarioId", async (req: Request, res: Response) => {
     const servicos = await prisma.servico.findMany({
       where: { usuarioId },
       include: {
-        usuario: {
-          select: { id: true, nome: true, email: true, telefone: true },
-        },
+        usuario: { select: usuarioSelectVerificacao() },
       },
       orderBy: { data_criacao: "desc" },
     })
 
-    res.json(servicos)
+    res.json(servicos.map(enriquecerServico))
   } catch (error) {
     console.error("Erro ao buscar serviÃ§os do usuÃ¡rio:", error)
     res.status(500).json({ error: "Erro ao buscar serviÃ§os do usuÃ¡rio" })
@@ -166,9 +182,7 @@ router.get("/:id", async (req: Request, res: Response) => {
     const servico = await prisma.servico.findUnique({
       where: { id: parseInt(id) },
       include: {
-        usuario: {
-          select: { id: true, nome: true, email: true, telefone: true },
-        },
+        usuario: { select: usuarioSelectVerificacao() },
       },
     })
 
@@ -176,7 +190,7 @@ router.get("/:id", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "ServiÃ§o nÃ£o encontrado" })
     }
 
-    res.json(servico)
+    res.json(enriquecerServico(servico))
   } catch (error) {
     console.error("Erro ao buscar serviÃ§o:", error)
     res.status(500).json({ error: "Erro ao buscar serviÃ§o" })
@@ -192,6 +206,16 @@ router.post("/", verificarToken, async (req: Request, res: Response) => {
       ...req.body,
       usuarioId: tokenData.id,
     })
+
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: tokenData.id },
+      include: { verificacaoPrestador: true },
+    })
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuário não encontrado" })
+    }
+
+    const publicado = podePublicarServico(usuario, { atende_domicilio: dados.atende_domicilio ?? false })
 
     const servico = await prisma.servico.create({
       data: {
@@ -219,15 +243,20 @@ router.post("/", verificarToken, async (req: Request, res: Response) => {
         duracao_agendamento: dados.duracao_agendamento || null,
         atende_domicilio: dados.atende_domicilio,
         taxa_domicilio: dados.taxa_domicilio || null,
+        publicado,
       },
       include: {
-        usuario: {
-          select: { id: true, nome: true, email: true, telefone: true },
-        },
+        usuario: { select: usuarioSelectVerificacao() },
       },
     })
 
-    res.status(201).json(servico)
+    const resposta = enriquecerServico(servico)
+    res.status(201).json({
+      ...resposta,
+      aviso: publicado
+        ? null
+        : motivoNaoPublicado(usuario, servico) || 'Complete a verificação para publicar seu serviço',
+    })
   } catch (error: any) {
     console.error("Erro ao criar serviÃ§o:", error)
     if (error instanceof z.ZodError) {
@@ -257,21 +286,31 @@ router.put("/:id", verificarToken, async (req: Request, res: Response) => {
 
     const dados = servicoSchema.partial().parse(req.body)
 
+    const usuario = await prisma.usuario.findUnique({
+      where: { id: tokenData.id },
+      include: { verificacaoPrestador: true },
+    })
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuário não encontrado" })
+    }
+
+    const atendeDomicilio = dados.atende_domicilio ?? servico.atende_domicilio
+    const publicado = podePublicarServico(usuario, { atende_domicilio: atendeDomicilio })
+
     const servicoAtualizado = await prisma.servico.update({
       where: { id: parseInt(id) },
       data: {
         ...dados,
         especies_atendidas: dados.especies_atendidas as any,
-        usuarioId: undefined, // NÃ£o permite mudar usuÃ¡rio
+        publicado,
+        usuarioId: undefined,
       },
       include: {
-        usuario: {
-          select: { id: true, nome: true, email: true, telefone: true },
-        },
+        usuario: { select: usuarioSelectVerificacao() },
       },
     })
 
-    res.json(servicoAtualizado)
+    res.json(enriquecerServico(servicoAtualizado))
   } catch (error: any) {
     console.error("Erro ao atualizar serviÃ§o:", error)
     if (error instanceof z.ZodError) {
@@ -281,7 +320,46 @@ router.put("/:id", verificarToken, async (req: Request, res: Response) => {
   }
 })
 
-// DELETE - Deletar serviÃ§o
+// PATCH - Ativar/desativar publicação do serviço
+router.patch("/:id/toggle-publicado", verificarToken, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params
+    const tokenData = (req as any).usuario
+
+    const servico = await prisma.servico.findUnique({
+      where: { id: parseInt(id) },
+      include: { usuario: { include: { verificacaoPrestador: true } } },
+    })
+
+    if (!servico) return res.status(404).json({ error: "Serviço não encontrado" })
+    if (servico.usuarioId !== tokenData.id) return res.status(403).json({ error: "Sem permissão" })
+
+    let novoStatus: boolean
+    if (servico.publicado) {
+      novoStatus = false
+    } else {
+      novoStatus = podePublicarServico(servico.usuario, { atende_domicilio: servico.atende_domicilio })
+      if (!novoStatus) {
+        return res.status(400).json({
+          error: motivoNaoPublicado(servico.usuario, servico) || "Complete a verificação para publicar o serviço",
+        })
+      }
+    }
+
+    const atualizado = await prisma.servico.update({
+      where: { id: parseInt(id) },
+      data: { publicado: novoStatus },
+      include: { usuario: { select: usuarioSelectVerificacao() } },
+    })
+
+    res.json(enriquecerServico(atualizado))
+  } catch (error) {
+    console.error("Erro ao alternar publicação:", error)
+    res.status(500).json({ error: "Erro ao alternar publicação do serviço" })
+  }
+})
+
+// DELETE - Deletar serviço
 router.delete("/:id", verificarToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params
@@ -292,21 +370,31 @@ router.delete("/:id", verificarToken, async (req: Request, res: Response) => {
     })
 
     if (!servico) {
-      return res.status(404).json({ error: "ServiÃ§o nÃ£o encontrado" })
+      return res.status(404).json({ error: "Serviço não encontrado" })
     }
 
     if (servico.usuarioId !== tokenData.id) {
-      return res.status(403).json({ error: "VocÃª nÃ£o tem permissÃ£o para deletar este serviÃ§o" })
+      return res.status(403).json({ error: "Você não tem permissão para deletar este serviço" })
+    }
+
+    const agendamentosAtivos = await prisma.agendamento.count({
+      where: { servicoId: parseInt(id), status: { not: "CANCELADO" } },
+    })
+
+    if (agendamentosAtivos > 0) {
+      return res.status(400).json({
+        error: `Não é possível excluir: há ${agendamentosAtivos} agendamento(s) ativo(s). Cancele-os primeiro na página de Agendamentos.`,
+      })
     }
 
     await prisma.servico.delete({
       where: { id: parseInt(id) },
     })
 
-    res.json({ message: "ServiÃ§o deletado com sucesso" })
+    res.json({ message: "Serviço excluído com sucesso" })
   } catch (error) {
-    console.error("Erro ao deletar serviÃ§o:", error)
-    res.status(500).json({ error: "Erro ao deletar serviÃ§o" })
+    console.error("Erro ao deletar serviço:", error)
+    res.status(500).json({ error: "Erro ao deletar serviço" })
   }
 })
 
