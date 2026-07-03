@@ -111,8 +111,13 @@ router.get("/usuario/:usuarioId", verificarToken, async (req: Request, res: Resp
             id: true,
             nome: true,
             tipo: true,
+            tipo_agendamento: true,
             endereco_texto: true,
             telefone: true,
+            hora_inicio: true,
+            hora_fim: true,
+            duracao_agendamento: true,
+            dias_funcionamento: true,
           },
         },
         usuario: {
@@ -143,6 +148,13 @@ router.get("/servico/:servicoId/ocupados", async (req: Request, res: Response) =
       return res.status(400).json({ erro: 'Parâmetro data é obrigatório (YYYY-MM-DD)' })
     }
 
+    const servico = await prisma.servico.findUnique({
+      where: { id: parseInt(servicoId) },
+      select: { capacidade_por_slot: true },
+    })
+
+    const capacidade = servico?.capacidade_por_slot || 1
+
     const dataInicio = new Date(`${data}T00:00:00.000Z`)
     const dataFim = new Date(`${data}T23:59:59.999Z`)
 
@@ -155,9 +167,24 @@ router.get("/servico/:servicoId/ocupados", async (req: Request, res: Response) =
       select: { horario_agendado: true, turno_agendado: true },
     })
 
+    // Conta agendamentos por horário; só marca como ocupado se atingiu a capacidade
+    const contagemHorarios: Record<string, number> = {}
+    const turnosSet = new Set<string>()
+
+    for (const a of agendamentos) {
+      if (a.horario_agendado) {
+        contagemHorarios[a.horario_agendado] = (contagemHorarios[a.horario_agendado] || 0) + 1
+      }
+      if (a.turno_agendado) turnosSet.add(a.turno_agendado)
+    }
+
+    const horariosOcupados = Object.entries(contagemHorarios)
+      .filter(([, count]) => count >= capacidade)
+      .map(([horario]) => horario)
+
     res.json({
-      horarios: agendamentos.map((a) => a.horario_agendado).filter(Boolean) as string[],
-      turnos: agendamentos.map((a) => a.turno_agendado).filter(Boolean) as string[],
+      horarios: horariosOcupados,
+      turnos: Array.from(turnosSet),
     })
   } catch (error: any) {
     res.status(500).json({ erro: error.message })

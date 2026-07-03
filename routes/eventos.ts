@@ -16,6 +16,8 @@ const eventoSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   endereco_texto: z.string().min(5).max(100),
+  bairro: z.string().max(60).optional(),
+  cidade: z.string().max(60).optional(),
   data_hora_inicio: z.string().datetime({ message: "Data e hora de início são obrigatórias" }),
   data_hora_fim: z.string().datetime({ message: "Data e hora de fim são obrigatórias" }).optional(),
   capacidade_max: z.number().min(1).optional()
@@ -76,7 +78,34 @@ async function enviaEmailEvento(nome: string, email: string, evento: any) {
 // GET - Listar todos os eventos
 router.get("/", async (req, res) => {
   try {
+    const { busca, cidade } = req.query
+    const where: any = {}
+    const andConditions: any[] = []
+
+    if (busca) {
+      andConditions.push({
+        OR: [
+          { titulo: { contains: busca as string, mode: 'insensitive' } },
+          { descricao: { contains: busca as string, mode: 'insensitive' } },
+          { endereco_texto: { contains: busca as string, mode: 'insensitive' } },
+        ]
+      })
+    }
+
+    if (cidade) {
+      andConditions.push({
+        OR: [
+          { cidade: { contains: cidade as string, mode: 'insensitive' } },
+          { bairro: { contains: cidade as string, mode: 'insensitive' } },
+          { endereco_texto: { contains: cidade as string, mode: 'insensitive' } },
+        ]
+      })
+    }
+
+    if (andConditions.length > 0) where.AND = andConditions
+
     const eventos = await prisma.evento.findMany({
+      where,
       include: {
         usuario: true,
         inscricoes: {
@@ -96,6 +125,7 @@ router.get("/proximos", async (req, res) => {
   try {
     const agora = new Date()
     const diasParam = req.query.dias ? parseInt(req.query.dias as string) : null
+    const { busca, cidade } = req.query
 
     const where: any = {
       data_hora_inicio: { gte: agora },
@@ -107,6 +137,30 @@ router.get("/proximos", async (req, res) => {
       limite.setDate(agora.getDate() + diasParam)
       where.data_hora_inicio = { gte: agora, lte: limite }
     }
+
+    const andConditions: any[] = []
+
+    if (busca) {
+      andConditions.push({
+        OR: [
+          { titulo: { contains: busca as string, mode: 'insensitive' } },
+          { descricao: { contains: busca as string, mode: 'insensitive' } },
+          { endereco_texto: { contains: busca as string, mode: 'insensitive' } },
+        ]
+      })
+    }
+
+    if (cidade) {
+      andConditions.push({
+        OR: [
+          { cidade: { contains: cidade as string, mode: 'insensitive' } },
+          { bairro: { contains: cidade as string, mode: 'insensitive' } },
+          { endereco_texto: { contains: cidade as string, mode: 'insensitive' } },
+        ]
+      })
+    }
+
+    if (andConditions.length > 0) where.AND = andConditions
 
     const eventos = await prisma.evento.findMany({
       where,
@@ -229,8 +283,8 @@ router.post("/", async (req, res) => {
     return
   }
 
-  const { usuarioId, titulo, descricao, fotos_urls, latitude, longitude, 
-          endereco_texto, data_hora_inicio, data_hora_fim, capacidade_max } = valida.data
+  const { usuarioId, titulo, descricao, fotos_urls, latitude, longitude,
+          endereco_texto, bairro, cidade, data_hora_inicio, data_hora_fim, capacidade_max } = valida.data
 
   try {
     // Verificar se o usuário existe
@@ -251,6 +305,8 @@ router.post("/", async (req, res) => {
         latitude,
         longitude,
         endereco_texto,
+        bairro: bairro || null,
+        cidade: cidade || null,
         data_hora_inicio: new Date(data_hora_inicio),
         data_hora_fim: data_hora_fim ? new Date(data_hora_fim) : null,
         capacidade_max,
@@ -288,8 +344,8 @@ router.put("/:id", async (req, res) => {
     return
   }
 
-  const { usuarioId, titulo, descricao, fotos_urls, latitude, longitude, 
-          endereco_texto, data_hora_inicio, data_hora_fim, capacidade_max } = valida.data
+  const { usuarioId, titulo, descricao, fotos_urls, latitude, longitude,
+          endereco_texto, bairro, cidade, data_hora_inicio, data_hora_fim, capacidade_max } = valida.data
 
   try {
     const evento = await prisma.evento.update({
@@ -302,6 +358,8 @@ router.put("/:id", async (req, res) => {
         latitude,
         longitude,
         endereco_texto,
+        bairro: bairro || null,
+        cidade: cidade || null,
         data_hora_inicio: new Date(data_hora_inicio),
         data_hora_fim: data_hora_fim ? new Date(data_hora_fim) : null,
         capacidade_max

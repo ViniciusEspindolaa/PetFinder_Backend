@@ -131,6 +131,8 @@ model Evento {
   latitude          Decimal       @db.Decimal(10, 7)
   longitude         Decimal       @db.Decimal(10, 7)
   endereco_texto    String        @db.VarChar(100)
+  bairro            String?       @db.VarChar(60)
+  cidade            String?       @db.VarChar(60)
   data_hora_inicio  DateTime
   data_hora_fim     DateTime?
   status            StatusEvento  @default(AGENDADO)
@@ -180,6 +182,9 @@ model Servico {
   hora_inicio       String?       @db.VarChar(5)
   hora_fim          String?       @db.VarChar(5)
   duracao_agendamento Int?        // em minutos
+  horarios_bloqueados String[]    @default([])
+  capacidade_por_slot Int?        // quantos agendamentos simultâneos por slot
+  vagas_disponiveis   Int?        // para hotéis/creches: null=ilimitado, 0=lotado
   atende_domicilio  Boolean       @default(false)
   taxa_domicilio    Decimal?      @db.Decimal(10, 2)
 

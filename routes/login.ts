@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken"
 import { prisma } from "../config/prisma"
 import { Router } from "express"
 import bcrypt from 'bcrypt'
+import { isAdminUser } from "../utils/prestador"
 
 const router = Router()
 
@@ -113,6 +114,8 @@ router.post("/", async (req, res) => {
         foto_perfil: usuario.foto_perfil,
         telefone_verificado: usuario.telefone_verificado,
         email_verificado: usuario.email_verificado,
+        createdAt: usuario.createdAt,
+        isAdmin: (usuario as any).tipo === 'admin' || isAdminUser(String(usuario.id)),
         token
       })
     } else {

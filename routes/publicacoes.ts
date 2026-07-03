@@ -678,7 +678,7 @@ router.get("/buscar/proximidade", async (req, res) => {
     const deltaLat = raio / 111
     const deltaLng = raio / (111 * Math.cos(lat * Math.PI / 180))
 
-    const publicacoes = await prisma.publicacao.findMany({
+    const publicacoesBbox = await prisma.publicacao.findMany({
       where: {
         latitude: {
           gte: lat - deltaLat,
@@ -702,6 +702,12 @@ router.get("/buscar/proximidade", async (req, res) => {
       },
       orderBy: { data_publicacao: 'desc' }
     })
+
+    const publicacoes = publicacoesBbox.filter(pub =>
+      pub.latitude !== null &&
+      pub.longitude !== null &&
+      haversineKm(lat, lng, Number(pub.latitude), Number(pub.longitude)) <= raio
+    )
 
     res.status(200).json({
       centro: { latitude: lat, longitude: lng },

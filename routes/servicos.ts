@@ -1,4 +1,4 @@
-﻿import { Router, Request, Response } from "express"
+import { Router, Request, Response } from "express"
 import { z } from "zod"
 import { PrismaClient } from "@prisma/client"
 import { verificarToken } from "../middleware/auth"
@@ -54,6 +54,9 @@ const servicoSchema = z.object({
   hora_inicio: z.string().optional().nullable(),
   hora_fim: z.string().optional().nullable(),
   duracao_agendamento: z.number().optional().nullable(),
+  horarios_bloqueados: z.array(z.string()).optional().default([]),
+  capacidade_por_slot: z.number().int().optional().nullable(),
+  vagas_disponiveis: z.number().int().optional().nullable(),
   atende_domicilio: z.boolean().optional().default(false),
   taxa_domicilio: z.number().optional().nullable(),
 })
@@ -66,25 +69,42 @@ router.get("/", async (req, res) => {
     const { categoria, pagina = 1, limite = 10, search, usuario_id } = req.query
 
     const where: any = {}
+    const andConditions: any[] = []
 
     if (categoria) where.tipo = categoria
-    if (req.query.cidade) where.cidade = { contains: req.query.cidade, mode: 'insensitive' }
-    if (req.query.abertoAgora === 'true') { 
-      const agora = new Date(); 
-      const horaAtual = agora.toTimeString().slice(0, 5); 
-      where.AND = [ { hora_inicio: { lte: horaAtual } }, { hora_fim: { gte: horaAtual } } ] 
+
+    if (req.query.abertoAgora === 'true') {
+      const agora = new Date()
+      const horaAtual = agora.toTimeString().slice(0, 5)
+      andConditions.push({ hora_inicio: { lte: horaAtual } }, { hora_fim: { gte: horaAtual } })
     }
+
     if (search) {
-      where.OR = [
-        { nome: { contains: search as string, mode: "insensitive" } },
-        { descricao: { contains: search as string, mode: "insensitive" } },
-      ]
+      andConditions.push({
+        OR: [
+          { nome: { contains: search as string, mode: "insensitive" } },
+          { descricao: { contains: search as string, mode: "insensitive" } },
+        ]
+      })
     }
+
+    if (req.query.cidade) {
+      andConditions.push({
+        OR: [
+          { cidade: { contains: req.query.cidade as string, mode: 'insensitive' } },
+          { bairro: { contains: req.query.cidade as string, mode: 'insensitive' } },
+          { endereco_texto: { contains: req.query.cidade as string, mode: 'insensitive' } },
+        ]
+      })
+    }
+
     if (usuario_id) {
       where.usuarioId = usuario_id
     } else {
       where.publicado = true
     }
+
+    if (andConditions.length > 0) where.AND = andConditions
 
     const skip = (parseInt(pagina as string) - 1) * parseInt(limite as string)
 
@@ -119,14 +139,14 @@ router.get("/proximos", async (req: Request, res: Response) => {
     const { latitude, longitude, raio = "10" } = req.query
 
     if (!latitude || !longitude) {
-      return res.status(400).json({ error: "Latitude e longitude sÃ£o obrigatÃ³rias" })
+      return res.status(400).json({ error: "Latitude e longitude são obrigatórias" })
     }
 
     const lat = parseFloat(latitude as string)
     const lon = parseFloat(longitude as string)
     const raioKm = parseFloat(raio as string)
 
-    // FÃ³rmula de Haversine para distÃ¢ncia em km
+    // Fórmula de Haversine para distância em km
     const servicos = await prisma.$queryRaw`
       SELECT 
         s.*,
@@ -149,12 +169,12 @@ router.get("/proximos", async (req: Request, res: Response) => {
 
     res.json(servicos)
   } catch (error) {
-    console.error("Erro ao buscar serviÃ§os prÃ³ximos:", error)
-    res.status(500).json({ error: "Erro ao buscar serviÃ§os prÃ³ximos" })
+    console.error("Erro ao buscar serviços próximos:", error)
+    res.status(500).json({ error: "Erro ao buscar serviços próximos" })
   }
 })
 
-// GET - ServiÃ§os de um usuÃ¡rio especÃ­fico
+// GET - Serviços de um usuário específico
 router.get("/usuario/:usuarioId", async (req: Request, res: Response) => {
   try {
     const { usuarioId } = req.params
@@ -169,12 +189,12 @@ router.get("/usuario/:usuarioId", async (req: Request, res: Response) => {
 
     res.json(servicos.map(enriquecerServico))
   } catch (error) {
-    console.error("Erro ao buscar serviÃ§os do usuÃ¡rio:", error)
-    res.status(500).json({ error: "Erro ao buscar serviÃ§os do usuÃ¡rio" })
+    console.error("Erro ao buscar serviços do usuário:", error)
+    res.status(500).json({ error: "Erro ao buscar serviços do usuário" })
   }
 })
 
-// GET - Detalhe de um serviÃ§o
+// GET - Detalhe de um serviço
 router.get("/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params
@@ -187,17 +207,17 @@ router.get("/:id", async (req: Request, res: Response) => {
     })
 
     if (!servico) {
-      return res.status(404).json({ error: "ServiÃ§o nÃ£o encontrado" })
+      return res.status(404).json({ error: "Serviço não encontrado" })
     }
 
     res.json(enriquecerServico(servico))
   } catch (error) {
-    console.error("Erro ao buscar serviÃ§o:", error)
-    res.status(500).json({ error: "Erro ao buscar serviÃ§o" })
+    console.error("Erro ao buscar serviço:", error)
+    res.status(500).json({ error: "Erro ao buscar serviço" })
   }
 })
 
-// POST - Criar novo serviÃ§o
+// POST - Criar novo serviço
 router.post("/", verificarToken, async (req: Request, res: Response) => {
   try {
     const tokenData = (req as any).usuario
@@ -236,11 +256,15 @@ router.post("/", verificarToken, async (req: Request, res: Response) => {
         fotos_urls: dados.fotos_urls || [],
         usuarioId: dados.usuarioId,
         valor_base: dados.valor_base || null,
+        variacoes: dados.variacoes ?? [],
         especies_atendidas: dados.especies_atendidas as any,
         dias_funcionamento: dados.dias_funcionamento,
         hora_inicio: dados.hora_inicio || null,
         hora_fim: dados.hora_fim || null,
         duracao_agendamento: dados.duracao_agendamento || null,
+        horarios_bloqueados: dados.horarios_bloqueados ?? [],
+        capacidade_por_slot: dados.capacidade_por_slot || null,
+        vagas_disponiveis: dados.vagas_disponiveis ?? null,
         atende_domicilio: dados.atende_domicilio,
         taxa_domicilio: dados.taxa_domicilio || null,
         publicado,
@@ -258,15 +282,15 @@ router.post("/", verificarToken, async (req: Request, res: Response) => {
         : motivoNaoPublicado(usuario, servico) || 'Complete a verificação para publicar seu serviço',
     })
   } catch (error: any) {
-    console.error("Erro ao criar serviÃ§o:", error)
+    console.error("Erro ao criar serviço:", error)
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors })
     }
-    res.status(500).json({ error: "Erro ao criar serviÃ§o" })
+    res.status(500).json({ error: "Erro ao criar serviço" })
   }
 })
 
-// PUT - Atualizar serviÃ§o
+// PUT - Atualizar serviço
 router.put("/:id", verificarToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params
@@ -277,11 +301,11 @@ router.put("/:id", verificarToken, async (req: Request, res: Response) => {
     })
 
     if (!servico) {
-      return res.status(404).json({ error: "ServiÃ§o nÃ£o encontrado" })
+      return res.status(404).json({ error: "Serviço não encontrado" })
     }
 
     if (servico.usuarioId !== tokenData.id) {
-      return res.status(403).json({ error: "VocÃª nÃ£o tem permissÃ£o para editar este serviÃ§o" })
+      return res.status(403).json({ error: "Você não tem permissão para editar este serviço" })
     }
 
     const dados = servicoSchema.partial().parse(req.body)
@@ -312,11 +336,11 @@ router.put("/:id", verificarToken, async (req: Request, res: Response) => {
 
     res.json(enriquecerServico(servicoAtualizado))
   } catch (error: any) {
-    console.error("Erro ao atualizar serviÃ§o:", error)
+    console.error("Erro ao atualizar serviço:", error)
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors })
     }
-    res.status(500).json({ error: "Erro ao atualizar serviÃ§o" })
+    res.status(500).json({ error: "Erro ao atualizar serviço" })
   }
 })
 
@@ -398,14 +422,14 @@ router.delete("/:id", verificarToken, async (req: Request, res: Response) => {
   }
 })
 
-// PATCH - Atualizar avaliaÃ§Ã£o
+// PATCH - Atualizar avaliação
 router.patch("/:id/avaliar", verificarToken, async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const { avaliacao } = req.body
 
     if (typeof avaliacao !== "number" || avaliacao < 0 || avaliacao > 5) {
-      return res.status(400).json({ error: "AvaliaÃ§Ã£o deve ser um nÃºmero entre 0 e 5" })
+      return res.status(400).json({ error: "Avaliação deve ser um número entre 0 e 5" })
     }
 
     const servico = await prisma.servico.findUnique({
@@ -413,7 +437,7 @@ router.patch("/:id/avaliar", verificarToken, async (req: Request, res: Response)
     })
 
     if (!servico) {
-      return res.status(404).json({ error: "ServiÃ§o nÃ£o encontrado" })
+      return res.status(404).json({ error: "Serviço não encontrado" })
     }
 
     const media = servico.avaliacoes && servico.total_avaliacoes > 0
@@ -435,8 +459,8 @@ router.patch("/:id/avaliar", verificarToken, async (req: Request, res: Response)
 
     res.json(servicoAtualizado)
   } catch (error) {
-    console.error("Erro ao avaliar serviÃ§o:", error)
-    res.status(500).json({ error: "Erro ao avaliar serviÃ§o" })
+    console.error("Erro ao avaliar serviço:", error)
+    res.status(500).json({ error: "Erro ao avaliar serviço" })
   }
 })
 
