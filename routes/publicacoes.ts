@@ -247,6 +247,8 @@ router.post("/", async (req, res) => {
 
     // Notificar usuários próximos (não bloqueante)
     notificarUsuariosProximos(publicacao);
+    // Cruzar PERDIDO ↔ ENCONTRADO e notificar partes relevantes
+    notificarSimilaresOpostos(publicacao);
 
     res.status(201).json(publicacao)
   } catch (error) {
@@ -327,6 +329,82 @@ async function notificarUsuariosProximos(publicacao: any) {
     }
   } catch (err) {
     console.error('Erro ao notificar usuários próximos:', err)
+  }
+}
+
+// Cruza PERDIDO ↔ ENCONTRADO após publicação e notifica as partes relevantes
+async function notificarSimilaresOpostos(publicacao: any) {
+  try {
+    const tipo = publicacao.tipo as string
+    if (tipo !== 'PERDIDO' && tipo !== 'ENCONTRADO') return
+
+    const tipoOposto = tipo === 'PERDIDO' ? 'ENCONTRADO' : 'PERDIDO'
+    const lat = Number(publicacao.latitude)
+    const lng = Number(publicacao.longitude)
+    const RAIO_KM = 15
+    const deltaLat = RAIO_KM / 111
+    const deltaLng = RAIO_KM / (111 * Math.cos(lat * Math.PI / 180))
+
+    const where: any = {
+      tipo: tipoOposto,
+      status: { not: 'RESOLVIDO' },
+      latitude: { gte: lat - deltaLat, lte: lat + deltaLat },
+      longitude: { gte: lng - deltaLng, lte: lng + deltaLng },
+    }
+    if (publicacao.especie) where.especie = publicacao.especie
+
+    const candidatos = await prisma.publicacao.findMany({
+      where,
+      include: { usuario: { select: { id: true } } },
+      take: 20,
+      orderBy: { data_publicacao: 'desc' },
+    })
+
+    const matches = candidatos.filter(c =>
+      haversineKm(lat, lng, Number(c.latitude), Number(c.longitude)) <= RAIO_KM
+    )
+
+    if (matches.length === 0) return
+
+    if (tipo === 'PERDIDO') {
+      // Notifica o dono do pet perdido: há pets encontrados próximos que podem ser o dele
+      const nomePet = publicacao.nome_pet || 'seu pet'
+      await prisma.notificacao.create({
+        data: {
+          usuarioId: publicacao.usuarioId,
+          titulo: `${matches.length} pet${matches.length > 1 ? 's encontrados' : ' encontrado'} próximo pode ser ${nomePet}!`,
+          corpo: `Encontramos ${matches.length} publicação${matches.length > 1 ? 'ões' : ''} de pets encontrados na sua área que podem corresponder. Confira no app.`,
+          lida: false,
+          canal: 'APP',
+          dados: {
+            type: 'similar_match',
+            petId: String(publicacao.id),
+            matchIds: matches.slice(0, 5).map(m => String(m.id)),
+          }
+        }
+      })
+    } else {
+      // Notifica os donos dos pets perdidos: alguém encontrou um pet que pode ser o deles
+      for (const match of matches.slice(0, 10)) {
+        const nomePet = (match as any).nome_pet || 'seu pet'
+        await prisma.notificacao.create({
+          data: {
+            usuarioId: match.usuario.id,
+            titulo: `Alguém encontrou um pet parecido com ${nomePet}!`,
+            corpo: `Um pet encontrado próximo pode ser ${nomePet}. Confira no app para ver se é ele.`,
+            lida: false,
+            canal: 'APP',
+            dados: {
+              type: 'similar_match',
+              petId: String(match.id),
+              foundPetId: String(publicacao.id),
+            }
+          }
+        })
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao notificar similares opostos:', err)
   }
 }
 
@@ -1162,6 +1240,8 @@ router.post("/com-fotos", (req, res) => {
 
       // Notificar usuários próximos (não bloqueante)
       notificarUsuariosProximos(publicacao);
+      // Cruzar PERDIDO ↔ ENCONTRADO e notificar partes relevantes
+      notificarSimilaresOpostos(publicacao);
 
       res.status(201).json({
         ...publicacao,
