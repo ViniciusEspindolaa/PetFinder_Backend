@@ -172,9 +172,11 @@ router.get("/busca-inteligente", async (req, res) => {
       SELECT
         id, tipo, titulo, descricao, especie, raca, cor, endereco_texto,
         fotos_urls, latitude, longitude, status, data_evento,
-        (vetor_busca <=> $1::vector) as "distancia"
+        (vetor_busca <=> $1::vector) as "distancia",
+        ROUND(((1 - (vetor_busca <=> $1::vector)) * 100)::numeric, 0) as "similaridade_pct"
       FROM publicacoes
       WHERE vetor_busca IS NOT NULL
+        AND (vetor_busca <=> $1::vector) <= 0.5
       ORDER BY "distancia" ASC
       LIMIT $2
     `, vetorString, parseInt(limite as string, 10));
@@ -897,7 +899,7 @@ router.get("/buscar/similares-proximos", async (req, res) => {
 
         return { ...pub, distancia_km: Math.round(distancia_km * 10) / 10, score_compatibilidade: Math.round(score * 10) / 10, _breedScore: breedScore }
       })
-      .filter((p): p is NonNullable<typeof p> => p !== null && p.distancia_km <= raio && p.score_compatibilidade >= 1)
+      .filter((p): p is NonNullable<typeof p> => p !== null && p.distancia_km <= raio && p.score_compatibilidade >= 5)
       // Pets com match de raça sempre sobem: primeiro por breedScore desc, depois score total, depois distância
       .sort((a, b) => b._breedScore - a._breedScore || b.score_compatibilidade - a.score_compatibilidade || a.distancia_km - b.distancia_km)
       .slice(0, 5)

@@ -102,6 +102,11 @@ router.get("/", async (req, res) => {
       where.usuarioId = usuario_id
     } else {
       where.publicado = true
+      where.usuario = {
+        telefone_verificado: true,
+        email_verificado: true,
+        NOT: { foto_perfil: null },
+      }
     }
 
     if (andConditions.length > 0) where.AND = andConditions
@@ -148,20 +153,23 @@ router.get("/proximos", async (req: Request, res: Response) => {
 
     // Fórmula de Haversine para distância em km
     const servicos = await prisma.$queryRaw`
-      SELECT 
+      SELECT
         s.*,
         u.id as usuario_id,
         u.nome as usuario_nome,
         u.email as usuario_email,
         u.telefone as usuario_telefone,
-        (6371 * acos(cos(radians(${lat})) * cos(radians(latitude)) * 
-         cos(radians(${lon}) - radians(longitude)) + 
+        (6371 * acos(cos(radians(${lat})) * cos(radians(latitude)) *
+         cos(radians(${lon}) - radians(longitude)) +
          sin(radians(${lat})) * sin(radians(latitude)))) AS distancia_km
       FROM servicos s
       JOIN usuarios u ON s."usuarioId" = u.id
       WHERE s.publicado = true
-      AND (6371 * acos(cos(radians(${lat})) * cos(radians(latitude)) * 
-         cos(radians(${lon}) - radians(longitude)) + 
+      AND u.telefone_verificado = true
+      AND u.email_verificado = true
+      AND u.foto_perfil IS NOT NULL
+      AND (6371 * acos(cos(radians(${lat})) * cos(radians(latitude)) *
+         cos(radians(${lon}) - radians(longitude)) +
          sin(radians(${lat})) * sin(radians(latitude)))) <= ${raioKm}
       ORDER BY distancia_km ASC
       LIMIT 20

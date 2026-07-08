@@ -28,7 +28,8 @@
     "pm2:restart": "pm2 restart petfinder-api",
     "pm2:logs": "pm2 logs petfinder-api",
     "pm2:monit": "pm2 monit",
-    "worker:notificacoes": "npx ts-node ./scripts/worker-notificacoes.ts"
+    "worker:notificacoes": "npx ts-node ./scripts/worker-notificacoes.ts",
+    "create-admin": "npx ts-node scripts/create-admin.ts"
   },
   "keywords": [],
   "author": "",

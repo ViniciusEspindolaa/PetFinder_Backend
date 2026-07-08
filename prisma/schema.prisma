@@ -22,6 +22,7 @@ model Usuario {
   email         String   @db.VarChar(40) @unique
   senha         String   @db.VarChar(60)   // senha deve ser varchar(60)
   telefone      String   @db.VarChar(15)
+  tipo          String   @default("usuario") @db.VarChar(20)
   latitude      Decimal? @db.Decimal(10, 7)
   longitude     Decimal? @db.Decimal(10, 7)
   configuracoes Json?

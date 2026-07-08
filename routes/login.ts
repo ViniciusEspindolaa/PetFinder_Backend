@@ -97,6 +97,7 @@ router.post("/", async (req, res) => {
       const token = jwt.sign({
         id: usuario.id,
         email: usuario.email,
+        tipo: usuario.tipo,
         usuarioLogadoId: usuario.id,
         usuarioLogadoNome: usuario.nome
       },
@@ -115,7 +116,7 @@ router.post("/", async (req, res) => {
         telefone_verificado: usuario.telefone_verificado,
         email_verificado: usuario.email_verificado,
         createdAt: usuario.createdAt,
-        isAdmin: (usuario as any).tipo === 'admin' || isAdminUser(String(usuario.id)),
+        isAdmin: usuario.tipo === 'admin' || isAdminUser(String(usuario.id)),
         token
       })
     } else {

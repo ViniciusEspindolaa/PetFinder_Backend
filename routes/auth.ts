@@ -151,7 +151,7 @@ router.post('/google', async (req, res) => {
     
     // Generate JWT
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { id: user.id, email: user.email, tipo: user.tipo },
       JWT_SECRET,
       { expiresIn: '7d' }
     );

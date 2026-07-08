@@ -27,11 +27,10 @@ export function podePublicarServico(
   usuario: UsuarioComVerificacao,
   servico: ServicoBasico
 ): boolean {
-  // Serviços em local fixo aparecem no mapa/listagem sem verificação completa
-  if (!servico.atende_domicilio) return true
-  // Atendimento em domicílio exige contato + identidade verificados
+  // Todos os serviços exigem verificação básica de contato
   if (!contatoBasicoVerificado(usuario)) return false
-  if (!identidadeVerificada(usuario)) return false
+  // Atendimento em domicílio exige também identidade verificada
+  if (servico.atende_domicilio && !identidadeVerificada(usuario)) return false
   return true
 }
 
@@ -50,11 +49,10 @@ export function motivoNaoPublicado(
   usuario: UsuarioComVerificacao,
   servico: ServicoBasico
 ): string | null {
-  if (!servico.atende_domicilio) return null
   if (!usuario.telefone_verificado) return 'Telefone não verificado'
   if (!usuario.email_verificado) return 'E-mail não verificado'
   if (!usuario.foto_perfil) return 'Foto de perfil obrigatória'
-  if (!identidadeVerificada(usuario)) {
+  if (servico.atende_domicilio && !identidadeVerificada(usuario)) {
     const status = usuario.verificacaoPrestador?.status
     if (status === 'PENDENTE' || status === 'EM_ANALISE') {
       return 'Verificação de identidade em análise'

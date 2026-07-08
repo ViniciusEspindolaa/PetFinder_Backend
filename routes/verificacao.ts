@@ -106,13 +106,11 @@ router.post('/telefone/enviar', verificarToken, async (req: AuthRequest, res: Re
       },
     })
 
-    if (process.env.NODE_ENV === 'development') {
-      logger.info(`[DEV] Código telefone para ${usuario.telefone}: ${codigo}`)
-    }
+    logger.info(`[SIMULADO] Código telefone para ${usuario.telefone}: ${codigo}`)
 
     res.json({
       mensagem: `Código enviado para ${usuario.telefone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) *****-$3')}`,
-      ...(process.env.NODE_ENV === 'development' ? { codigo_dev: codigo } : {}),
+      codigo_dev: codigo,
     })
   } catch (error) {
     res.status(500).json({ erro: 'Erro ao enviar código de telefone' })
@@ -171,16 +169,12 @@ router.post('/email/enviar', verificarToken, async (req: AuthRequest, res: Respo
     try {
       await enviarEmailCodigo(usuario.email, codigo)
     } catch (emailErr) {
-      if (process.env.NODE_ENV === 'development') {
-        logger.info(`[DEV] Código e-mail para ${usuario.email}: ${codigo}`)
-      } else {
-        throw emailErr
-      }
+      logger.warn(`[EMAIL] Falha ao enviar e-mail para ${usuario.email}, use codigo_dev`)
     }
 
     res.json({
       mensagem: `Código enviado para ${usuario.email}`,
-      ...(process.env.NODE_ENV === 'development' ? { codigo_dev: codigo } : {}),
+      codigo_dev: codigo,
     })
   } catch (error) {
     res.status(500).json({ erro: 'Erro ao enviar código de e-mail' })
